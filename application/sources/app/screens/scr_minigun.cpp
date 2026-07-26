@@ -31,6 +31,14 @@ static const minigun_building_t k_minigun_buildings[] = {
 
 #define MINIGUN_GROUND_Y		(50) /* baseline all buildings sit on */
 
+#define MINIGUN_ANGLE_MIN		(10)
+#define MINIGUN_ANGLE_MAX		(80)
+#define MINIGUN_ANGLE_STEP		(5)
+#define MINIGUN_ANGLE_DEFAULT	(45)
+
+#define MINIGUN_POWER_MIN		(0)
+#define MINIGUN_POWER_MAX		(100)
+
 enum minigun_state_t {
 	MINIGUN_STATE_AIMING = 0,
 	MINIGUN_STATE_FIRING,
@@ -43,8 +51,11 @@ static uint8_t minigun_terrain_top[LCD_WIDTH];
 
 static uint8_t minigun_player_x[2];
 static uint8_t minigun_player_y[2];
+static uint8_t minigun_angle_deg[2];
+static uint8_t minigun_power_val[2];
 static uint8_t minigun_current_player = 0;
 static uint8_t minigun_game_state = MINIGUN_STATE_AIMING;
+static bool	minigun_is_charging = false;
 
 static void view_scr_minigun();
 
@@ -88,7 +99,13 @@ static void minigun_new_match() {
 	minigun_build_terrain();
 	minigun_place_players();
 
+	for (uint8_t p = 0; p < 2; p++) {
+		minigun_angle_deg[p] = MINIGUN_ANGLE_DEFAULT;
+		minigun_power_val[p] = MINIGUN_POWER_MIN;
+	}
+
 	minigun_current_player = 0;
+	minigun_is_charging	= false;
 	minigun_game_state		= MINIGUN_STATE_AIMING;
 }
 
@@ -113,9 +130,9 @@ static void minigun_draw_hud() {
 	view_render.setTextColor(WHITE);
 	view_render.setCursor(0, LCD_HEIGHT - 8);
 	view_render.print("Angle: ");
-	view_render.print((int)0);
+	view_render.print((int)minigun_angle_deg[minigun_current_player]);
 	view_render.print(" Power: ");
-	view_render.print((int)0);
+	view_render.print((int)minigun_power_val[minigun_current_player]);
 }
 
 void view_scr_minigun() {
@@ -132,6 +149,24 @@ void scr_minigun_handle(ak_msg_t* msg) {
 	case SCREEN_ENTRY: {
 		APP_DBG_SIG("SCREEN_ENTRY\n");
 		minigun_new_match();
+	} break;
+
+	case AC_DISPLAY_BUTON_UP_PRESSED: {
+		APP_DBG_SIG("AC_DISPLAY_BUTON_UP_PRESSED\n");
+		if (minigun_game_state == MINIGUN_STATE_AIMING) {
+			if (minigun_angle_deg[minigun_current_player] + MINIGUN_ANGLE_STEP <= MINIGUN_ANGLE_MAX) {
+				minigun_angle_deg[minigun_current_player] += MINIGUN_ANGLE_STEP;
+			}
+		}
+	} break;
+
+	case AC_DISPLAY_BUTON_DOWN_PRESSED: {
+		APP_DBG_SIG("AC_DISPLAY_BUTON_DOWN_PRESSED\n");
+		if (minigun_game_state == MINIGUN_STATE_AIMING) {
+			if (minigun_angle_deg[minigun_current_player] >= MINIGUN_ANGLE_MIN + MINIGUN_ANGLE_STEP) {
+				minigun_angle_deg[minigun_current_player] -= MINIGUN_ANGLE_STEP;
+			}
+		}
 	} break;
 
 	default:
