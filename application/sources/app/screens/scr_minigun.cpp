@@ -270,7 +270,27 @@ static void minigun_draw_hud() {
 	view_render.print((int)minigun_power_val[minigun_current_player]);
 }
 
+static void minigun_draw_game_over() {
+	view_render.setTextSize(1);
+	view_render.setTextColor(WHITE);
+
+	view_render.setCursor(16, 14);
+	view_render.print("PLAYER ");
+	view_render.print((int)(minigun_winner + 1));
+
+	view_render.setCursor(34, 26);
+	view_render.print("WINS!");
+
+	view_render.setCursor(4, 44);
+	view_render.print("MODE: play again");
+}
+
 void view_scr_minigun() {
+	if (minigun_game_state == MINIGUN_STATE_GAME_OVER) {
+		minigun_draw_game_over();
+		return;
+	}
+
 	minigun_draw_skyline();
 
 	view_render.drawBitmap(minigun_player_x[0], minigun_player_y[0], bitmap_player_human, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
@@ -310,7 +330,11 @@ void scr_minigun_handle(ak_msg_t* msg) {
 
 	case AC_DISPLAY_BUTON_MODE_PRESSED: {
 		APP_DBG_SIG("AC_DISPLAY_BUTON_MODE_PRESSED\n");
-		if (minigun_game_state == MINIGUN_STATE_AIMING && !minigun_is_charging) {
+		if (minigun_game_state == MINIGUN_STATE_GAME_OVER) {
+			BUZZER_PlaySound(BUZZER_SOUND_CLICK);
+			minigun_new_match();
+		}
+		else if (minigun_game_state == MINIGUN_STATE_AIMING && !minigun_is_charging) {
 			minigun_is_charging = true;
 			minigun_power_val[minigun_current_player] = MINIGUN_POWER_MIN;
 			timer_set(AC_TASK_DISPLAY_ID, AC_MINIGUN_CHARGE_TICK, AC_MINIGUN_CHARGE_TICK_INTERVAL_MS, TIMER_PERIODIC);
