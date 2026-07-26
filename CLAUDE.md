@@ -136,3 +136,37 @@ the actual screen dimensions (`LCD_WIDTH`/`LCD_HEIGHT`) and the reference
 mock the feature was specified against. It has **not** been verified on
 real hardware via `decode_ak_lcd`/`analyze_ak_log` — do that as the next
 step once a board is available, per the workflow above.
+
+What was checked in place of real hardware, at the final commit:
+
+- **Clean rebuild**: `rm -rf build_*` then `make` from scratch, zero
+  compiler warnings, `ak-base-kit-stm32l151-application.bin` produced.
+- **Budget**: `make info` → flash 70920/118784 B (59.7% used), RAM
+  13964/16384 B (85.2% used, 14.8% free). RAM was ~84% used in the
+  *unmodified* base kit before any game code was added, so headroom was
+  tight going in; every game-state array is fixed-size (no
+  `std::vector`/heap growth) and the total added RAM is ~200 bytes.
+- **Timer pool**: `AK_TIMER_POOL_SIZE=16` (`ak.cfg.mk`). MiniGun's three
+  timers (`AC_MINIGUN_CHARGE_TICK`, `AC_MINIGUN_PROJECTILE_TICK`,
+  `AC_MINIGUN_ROUND_END_TICK`) are mutually exclusive by game state (at
+  most one live at a time) and are always cancelled with
+  `timer_remove_attr` before the next is armed or on `SCREEN_ENTRY` —
+  same one-active-timer-per-screen pattern the base kit's own screens
+  already use. `timer_remove_attr` is documented safe to call with no
+  matching timer (`TIMER_RET_NG`, not FATAL), which the reset path in
+  `minigun_new_match()` relies on.
+- **Physics**: the trajectory formulas (angle/power → velocity, gravity
+  integration, collision priority) were re-implemented standalone in
+  Python with the exact same constants and run across a sweep of
+  angle/power combinations. Confirmed: hit trajectories exist across a
+  wide range (not degenerate — the game requires actually aiming), all
+  miss trajectories terminate well under the 150-tick safety cap (worst
+  case observed ~45 ticks), no combination hangs.
+- **Screen layout**: both the normal play screen and the game-over banner
+  were rendered by an independent host-side script (reuses the real 5x7
+  font table from `glcdfont.cpp`, reimplements the small
+  fillRect/drawBitmap/print subset scr_minigun.cpp actually calls, into
+  the same 128x64 page-major/LSB-top buffer `decode_ak_lcd` expects) and
+  visually inspected via `decode_ak_lcd` — skyline, both sprites, and HUD
+  text all render as intended and within panel bounds. This is a
+  visualization aid only, not a substitute for flashing real hardware.
