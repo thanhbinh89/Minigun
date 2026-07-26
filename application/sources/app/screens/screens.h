@@ -43,4 +43,9 @@ extern view_dynamic_t dyn_view_welcome;
 extern view_screen_t scr_welcome;
 extern void scr_welcome_handle(ak_msg_t* msg);
 
+// scr_minigun
+extern view_dynamic_t dyn_view_minigun;
+extern view_screen_t scr_minigun;
+extern void scr_minigun_handle(ak_msg_t* msg);
+
 #endif //__SCREENS_H__
