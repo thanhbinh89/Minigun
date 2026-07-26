@@ -179,6 +179,37 @@ Between `btn p`/`btn r`, `btn u`/`btn d`, and `lcd d`, the whole state
 machine — aiming, charging, firing, collision, win, restart — is now
 exercisable and verifiable end to end without a human at the board.
 
+**And it was**: flashed this build and drove a full match through `btn`
++ `lcd d` + `decode_ak_lcd`, all confirmed on the real board:
+
+- `btn u` x2 moved the HUD from "Angle: 45" to "Angle: 55".
+- `btn p`, held (via a real host-side `sleep`, not a device-side delay —
+  see below), then `btn r`: power climbed and correctly clamped at
+  "Power: 100"; a live projectile trail was visible mid-flight in the
+  `lcd d` dump, arcing up-right from the human's building exactly as the
+  physics predicted.
+- A shot that hit terrain correctly passed the turn to the other player,
+  who came up with their **own independently-tracked** angle/power
+  (defaulted "Angle: 45 Power: 0", untouched by player 1's changes) —
+  confirms the per-player state arrays aren't cross-contaminating.
+- A shot that connected correctly ended the match: "PLAYER 2 WINS!" /
+  "MODE: play again" rendered exactly as designed, no skyline underneath.
+- `btn p` on that game-over screen correctly restarted: skyline and both
+  sprites back, "Angle: 45 Power: 0", player 0's turn again.
+- `fatal l` before vs. after this whole session: `fatal_times` still
+  `-1` (never fired), `restart_times` +1 — and that +1 is fully
+  accounted for by the `ak-flash` re-flash itself (which reboots the
+  board), not by anything that happened during the match. Zero crashes
+  across aiming, charging to max, firing, a miss, a hit, and a restart.
+
+One methodology note worth keeping: the first several timed shots all
+landed at max power despite intending to hold for less, because the
+helper script's read-drain after sending a command (~0.5-1s) was silently
+adding to the "hold" duration. Fixed by adding a zero-latency send-only
+mode and doing the timing entirely with the host's own `sleep` between
+two separate sends — worth remembering for any future "simulate a timed
+hold" testing over this shell.
+
 What was checked in place of hands-on-buttons hardware testing, at the
 final pre-flash commit:
 
