@@ -126,18 +126,35 @@ Flashing a real board (once you have one connected):
 ak_flash /dev/ttyUSB0 build_ak-base-kit-stm32l151-application/ak-base-kit-stm32l151-application.bin 0x08003000
 ```
 
-### Testing without hardware
+### Verified on real hardware
 
-This repo has been developed and build-verified in a sandbox with no
-physical AK board attached. Every commit compiles and links cleanly for
-the real STM32L151 target (`make` succeeds, `make info` reported RAM/flash
-budget checked) and the game logic/layout was reasoned through against
-the actual screen dimensions (`LCD_WIDTH`/`LCD_HEIGHT`) and the reference
-mock the feature was specified against. It has **not** been verified on
-real hardware via `decode_ak_lcd`/`analyze_ak_log` — do that as the next
-step once a board is available, per the workflow above.
+Flashed to a real AK Embedded Base Kit over `/dev/ttyUSB0` (CH340 adapter)
+via `ak-flash`, checksum verified. On-device confirmation:
 
-What was checked in place of real hardware, at the final commit:
+- `ver`: kernel 1.3, app 0.0.0.3, firmware checksum `fbcc` (matches the
+  `ak-flash` transfer), SRAM breakdown sums to the full 16384 B budget.
+- `fatal l` before and after exercising the boot cascade: `fatal_times`
+  stayed at `-1` (never fired, erased-flash sentinel) and `restart_times`
+  held steady — no crash, no watchdog reset.
+- Without touching any button, the board auto-cascades
+  `scr_startup` → `scr_qrcode` (10s) → `scr_welcome` (15s) →
+  `scr_minigun` (~27s total from boot) exactly as designed, and lands on
+  the aiming screen on its own.
+- `lcd d` on the real framebuffer at that point, decoded via
+  `decode_ak_lcd`: skyline, both sprites, and "Angle: 45 Power: 0" all
+  render correctly — byte-for-byte identical to the host-side preview
+  renderer's prediction, and matching the reference mock this feature was
+  built against.
+
+No physical access to the board's buttons from this environment, so the
+interactive half — aiming with UP/DOWN, hold-to-charge/release-to-fire on
+MODE, collision, win/restart — has **not** been exercised on hardware yet.
+That needs a human at the board; watch `fatal l`/`fatal m` afterward for
+anything that surfaces (e.g. `restart_times` climbing would mean a
+handler blocked the watchdog).
+
+What was checked in place of hands-on-buttons hardware testing, at the
+final pre-flash commit:
 
 - **Clean rebuild**: `rm -rf build_*` then `make` from scratch, zero
   compiler warnings, `ak-base-kit-stm32l151-application.bin` produced.
