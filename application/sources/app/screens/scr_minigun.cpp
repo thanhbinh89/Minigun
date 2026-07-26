@@ -16,20 +16,20 @@ struct minigun_building_t {
 	uint8_t h; /* height above MINIGUN_GROUND_Y, in pixels */
 };
 
-/* Fixed skyline, widths sum to LCD_WIDTH (124px) so buildings tile edge to edge. */
-static const minigun_building_t k_minigun_buildings[] = {
-	{0,   18, 22},
-	{18,  14, 34},
-	{32,  20, 14},
-	{52,  16, 26},
-	{68,  10, 10},
-	{78,  22, 30},
-	{100, 10, 18},
-	{110, 14, 24},
-};
-#define MINIGUN_BUILDING_COUNT	(sizeof(k_minigun_buildings) / sizeof(k_minigun_buildings[0]))
+/* Skyline is regenerated per match (minigun_generate_skyline) so every game
+ * looks different; widths always sum to exactly LCD_WIDTH (124px) so
+ * buildings still tile edge to edge with no gaps.
+ */
+#define MINIGUN_BUILDING_COUNT			(8)
+#define MINIGUN_BUILDING_MIN_W			(12) /* >= sprite width + margin, so players fit centered */
+#define MINIGUN_BUILDING_HEIGHT_MIN	(8)
+#define MINIGUN_BUILDING_HEIGHT_MAX	(36) /* stays well clear of the top of the panel */
+
+static minigun_building_t minigun_buildings[MINIGUN_BUILDING_COUNT];
 
 #define MINIGUN_GROUND_Y		(50) /* baseline all buildings sit on */
+
+#define MINIGUN_AIM_LINE_LEN	(6) /* short aim indicator drawn off the current shooter */
 
 #define MINIGUN_ANGLE_MIN		(10)
 #define MINIGUN_ANGLE_MAX		(80)
@@ -98,19 +98,47 @@ view_screen_t scr_minigun = {
 	.focus_item = 0,
 };
 
+/* Random skyline for this match: every building starts at the minimum
+ * width, then the leftover width (LCD_WIDTH - COUNT*MIN_W) is handed out
+ * one pixel at a time to random buildings - guarantees the widths sum to
+ * exactly LCD_WIDTH regardless of how the RNG lands. Heights are just a
+ * uniform random pick per building.
+ */
+static void minigun_generate_skyline() {
+	srand(sys_ctrl_millis());
+
+	uint8_t bonus = LCD_WIDTH - (MINIGUN_BUILDING_COUNT * MINIGUN_BUILDING_MIN_W);
+
+	for (uint8_t b = 0; b < MINIGUN_BUILDING_COUNT; b++) {
+		minigun_buildings[b].w = MINIGUN_BUILDING_MIN_W;
+		minigun_buildings[b].h = MINIGUN_BUILDING_HEIGHT_MIN + \
+			(rand() % (MINIGUN_BUILDING_HEIGHT_MAX - MINIGUN_BUILDING_HEIGHT_MIN + 1));
+	}
+
+	for (uint8_t i = 0; i < bonus; i++) {
+		minigun_buildings[rand() % MINIGUN_BUILDING_COUNT].w++;
+	}
+
+	uint8_t x = 0;
+	for (uint8_t b = 0; b < MINIGUN_BUILDING_COUNT; b++) {
+		minigun_buildings[b].x = x;
+		x += minigun_buildings[b].w;
+	}
+}
+
 static void minigun_build_terrain() {
 	uint8_t x = 0;
 	for (uint8_t b = 0; b < MINIGUN_BUILDING_COUNT; b++) {
-		uint8_t top = MINIGUN_GROUND_Y - k_minigun_buildings[b].h;
-		for (uint8_t i = 0; i < k_minigun_buildings[b].w && x < LCD_WIDTH; i++, x++) {
+		uint8_t top = MINIGUN_GROUND_Y - minigun_buildings[b].h;
+		for (uint8_t i = 0; i < minigun_buildings[b].w && x < LCD_WIDTH; i++, x++) {
 			minigun_terrain_top[x] = top;
 		}
 	}
 }
 
 static void minigun_place_players() {
-	const minigun_building_t& b_left  = k_minigun_buildings[0];
-	const minigun_building_t& b_right = k_minigun_buildings[MINIGUN_BUILDING_COUNT - 1];
+	const minigun_building_t& b_left  = minigun_buildings[0];
+	const minigun_building_t& b_right = minigun_buildings[MINIGUN_BUILDING_COUNT - 1];
 
 	minigun_player_x[0] = b_left.x + (b_left.w - MINIGUN_SPRITE_W) / 2;
 	minigun_player_y[0] = MINIGUN_GROUND_Y - b_left.h - MINIGUN_SPRITE_H;
@@ -224,6 +252,7 @@ static void minigun_start_next_turn() {
 }
 
 static void minigun_new_match() {
+	minigun_generate_skyline();
 	minigun_build_terrain();
 	minigun_place_players();
 
@@ -246,7 +275,7 @@ static void minigun_new_match() {
 
 static void minigun_draw_skyline() {
 	for (uint8_t b = 0; b < MINIGUN_BUILDING_COUNT; b++) {
-		const minigun_building_t& bd = k_minigun_buildings[b];
+		const minigun_building_t& bd = minigun_buildings[b];
 		uint8_t top = MINIGUN_GROUND_Y - bd.h;
 
 		view_render.fillRect(bd.x, top, bd.w, bd.h, WHITE);
@@ -258,6 +287,22 @@ static void minigun_draw_skyline() {
 			}
 		}
 	}
+}
+
+/* Short dash off the current shooter showing their aim, pivoting from
+ * about shoulder height in the direction/angle they're about to fire.
+ */
+static void minigun_draw_aim_line() {
+	uint8_t p = minigun_current_player;
+	float rad = minigun_angle_deg[p] * MINIGUN_DEG2RAD;
+	float dir = (p == 0) ? 1.0f : -1.0f;
+
+	int16_t ox = minigun_player_x[p] + (MINIGUN_SPRITE_W / 2);
+	int16_t oy = minigun_player_y[p] + 5;
+	int16_t tx = ox + (int16_t)(dir * MINIGUN_AIM_LINE_LEN * cos(rad));
+	int16_t ty = oy - (int16_t)(MINIGUN_AIM_LINE_LEN * sin(rad));
+
+	view_render.drawLine(ox, oy, tx, ty, WHITE);
 }
 
 static void minigun_draw_hud() {
@@ -295,6 +340,7 @@ void view_scr_minigun() {
 
 	view_render.drawBitmap(minigun_player_x[0], minigun_player_y[0], bitmap_player_human, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
 	view_render.drawBitmap(minigun_player_x[1], minigun_player_y[1], bitmap_player_alien, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
+	minigun_draw_aim_line();
 
 	for (uint8_t i = 0; i < minigun_trail_count; i++) {
 		view_render.drawPixel(minigun_trail[i].x, minigun_trail[i].y, WHITE);

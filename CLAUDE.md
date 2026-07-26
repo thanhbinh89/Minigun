@@ -15,10 +15,18 @@ future changes stay consistent.
 
 - **Players**: two on-screen characters (`bitmap_player_human`,
   `bitmap_player_alien` in `app/screens/screens_bitmap.cpp`), standing on
-  the leftmost and rightmost buildings of a fixed skyline. Turn 0 = human
+  the leftmost and rightmost buildings of the skyline. Turn 0 = human
   (fires rightward), turn 1 = alien (fires leftward).
+- **World**: the skyline is randomly regenerated every match
+  (`minigun_generate_skyline()`) — 8 buildings, widths always summing to
+  exactly `LCD_WIDTH` so they still tile edge to edge with no gaps, random
+  height per building. Seeded from `sys_ctrl_millis()` so it varies both
+  across matches in one session and across power cycles.
 - **Aim**: `UP` / `DOWN` buttons change the current player's angle in
-  5° steps, clamped to `[10°, 80°]`. Default 45°.
+  5° steps, clamped to `[10°, 80°]`. Default 45°. The current shooter also
+  gets a short line drawn off their shoulder (`minigun_draw_aim_line()`)
+  pointing at their exact angle/direction — a visual pointer to go with
+  the `Angle: NN` text, rotates live as you press UP/DOWN.
 - **Power**: holding `MODE` charges power (0-100) at a fixed rate for as
   long as the button is held; releasing `MODE` fires immediately at
   whatever power was reached. A quick tap fires a very weak shot; a long
@@ -32,8 +40,8 @@ future changes stay consistent.
   currently aiming/firing, per the reference mock the game was designed
   against.
 - **Restart**: from the game-over screen, pressing `MODE` starts a new
-  match (skyline is the same fixed layout; both players reset to 45°/0
-  power, human goes first).
+  match — a freshly randomized skyline, both players reset to 45°/0
+  power, human goes first.
 
 All of this lives in one screen: `app/screens/scr_minigun.{h,cpp}`. See the
 top of that file for the exact state machine (`MINIGUN_STATE_AIMING` →
@@ -209,6 +217,16 @@ adding to the "hold" duration. Fixed by adding a zero-latency send-only
 mode and doing the timing entirely with the host's own `sleep` between
 two separate sends — worth remembering for any future "simulate a timed
 hold" testing over this shell.
+
+### Random skyline + aim-angle line
+
+Both flashed and confirmed on the real board (`lcd d` + `decode_ak_lcd`):
+two boots produced visibly different skylines (building count fixed at 8,
+but widths/heights genuinely varied — one run put the human on a tall
+narrow spike, the next spread height more evenly), and `btn d` x7
+(angle 45→10) visibly rotated the aim line from a steep diagonal to
+nearly horizontal next to the character's head. `fatal l` unchanged
+(`fatal_times` still `-1`, `restart_times` +1 for the reflash only).
 
 What was checked in place of hands-on-buttons hardware testing, at the
 final pre-flash commit:
