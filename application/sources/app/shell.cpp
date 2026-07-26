@@ -83,6 +83,7 @@ int32_t shell_fwu(uint8_t* argv);
 int32_t shell_psv(uint8_t* argv);
 int32_t shell_buzzer(uint8_t* argv);
 int32_t shell_modbus(uint8_t* argv);
+int32_t shell_btn(uint8_t* argv);
 
 /*****************************************************************************/
 /*  command table
@@ -104,6 +105,7 @@ const cmd_line_t lgn_cmd_table[] = {
 	{(const int8_t*)"eps",		shell_eps,			(const int8_t*)"epprom"},
 	{(const int8_t*)"flash",	shell_flash,		(const int8_t*)"flash"},
 	{(const int8_t*)"lcd",		shell_lcd,			(const int8_t*)"lcd"},
+	{(const int8_t*)"btn",		shell_btn,			(const int8_t*)"simulate UP/DOWN/MODE button events (headless test)"},
 	{(const int8_t*)"boot",		shell_boot,			(const int8_t*)"boot share"},
 	{(const int8_t*)"fwu",		shell_fwu,			(const int8_t*)"app burn firmware"},
 	{(const int8_t*)"psv",		shell_psv,			(const int8_t*)"psv"},
@@ -621,6 +623,47 @@ void shell_lcd_dump_framebuffer() {
 	}
 
 	LOGIN_PRINT("\n[DUMP] frame buffer lcd => end\n");
+}
+
+/* Simulate the 3 physical buttons by posting the exact same signals their
+ * GPIO callbacks post (see app_bsp.cpp: btn_mode/up/down_callback), so a
+ * headless UART session (no access to the physical buttons) can still drive
+ * and verify MiniGun end to end: "btn p" then a real wait then "btn r" is
+ * the shell equivalent of holding MODE, then "lcd d" to see the result.
+ */
+int32_t shell_btn(uint8_t* argv) {
+	switch (*(argv + 4)) {
+	case 'u':
+		task_post_pure_msg(AC_TASK_DISPLAY_ID, AC_DISPLAY_BUTON_UP_PRESSED);
+		LOGIN_PRINT("btn: UP\n");
+		break;
+
+	case 'd':
+		task_post_pure_msg(AC_TASK_DISPLAY_ID, AC_DISPLAY_BUTON_DOWN_PRESSED);
+		LOGIN_PRINT("btn: DOWN\n");
+		break;
+
+	case 'p':
+		task_post_pure_msg(AC_TASK_DISPLAY_ID, AC_DISPLAY_BUTON_MODE_PRESSED);
+		LOGIN_PRINT("btn: MODE press (charging starts)\n");
+		break;
+
+	case 'r':
+		task_post_pure_msg(AC_TASK_DISPLAY_ID, AC_DISPLAY_BUTON_MODE_RELEASED);
+		LOGIN_PRINT("btn: MODE release (fires at current power)\n");
+		break;
+
+	default:
+		LOGIN_PRINT("\n[HELP] simulate button events - no physical GPIO needed\n");
+		LOGIN_PRINT("btn u   : UP tap        - increase aim angle\n");
+		LOGIN_PRINT("btn d   : DOWN tap      - decrease aim angle\n");
+		LOGIN_PRINT("btn p   : MODE press    - start charging power\n");
+		LOGIN_PRINT("btn r   : MODE release  - fire at current power\n");
+		LOGIN_PRINT("wait real time between \"btn p\" and \"btn r\" to control charge (+3 power per ~60ms)\n");
+		break;
+	}
+
+	return 0;
 }
 
 /* https://www.charbase.com */

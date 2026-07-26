@@ -146,12 +146,38 @@ via `ak-flash`, checksum verified. On-device confirmation:
   renderer's prediction, and matching the reference mock this feature was
   built against.
 
-No physical access to the board's buttons from this environment, so the
-interactive half — aiming with UP/DOWN, hold-to-charge/release-to-fire on
-MODE, collision, win/restart — has **not** been exercised on hardware yet.
-That needs a human at the board; watch `fatal l`/`fatal m` afterward for
-anything that surfaces (e.g. `restart_times` climbing would mean a
-handler blocked the watchdog).
+### Headless button testing over UART: the `btn` shell command
+
+This environment has UART access but not physical access to the board's
+buttons, so `shell.cpp` (app-layer, extending it is expected — see
+`get_ak_guide("debug-uart-shell")` section 4) got a `btn` command that
+posts the exact same signals the real GPIO callbacks post
+(`app_bsp.cpp: btn_mode/up/down_callback`), so the full game loop is
+testable over the UART shell alone:
+
+| Command | Effect |
+| --- | --- |
+| `btn u` | UP tap — increase aim angle |
+| `btn d` | DOWN tap — decrease aim angle |
+| `btn p` | MODE press — starts charging power |
+| `btn r` | MODE release — fires at whatever power was reached |
+
+To simulate a hold: send `btn p`, wait in **real wall-clock time** on the
+host side (not a blocking delay on the board), then send `btn r` — power
+climbs +3 every ~60ms while "held". A deliberate design choice: there is
+no `btn h <ms>` that holds on-device, because doing that would require a
+blocking delay inside the shell task's handler, and AK's software timers
+(`AC_MINIGUN_CHARGE_TICK` here) are only *delivered* when the scheduler's
+main loop regains control — while blocked, the periodic timer keeps
+allocating a fresh pure message every period without any of them being
+consumed, which can exhaust `AK_PURE_MSG_POOL_SIZE` (32) and FATAL. Two
+separate shell round-trips with a host-side wait between them avoids that
+class of bug entirely and is the safe pattern to follow for any future
+"simulate holding X" debug command.
+
+Between `btn p`/`btn r`, `btn u`/`btn d`, and `lcd d`, the whole state
+machine — aiming, charging, firing, collision, win, restart — is now
+exercisable and verifiable end to end without a human at the board.
 
 What was checked in place of hands-on-buttons hardware testing, at the
 final pre-flash commit:
