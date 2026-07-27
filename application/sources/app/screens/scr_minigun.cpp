@@ -30,6 +30,7 @@ static minigun_building_t minigun_buildings[MINIGUN_BUILDING_COUNT];
 #define MINIGUN_GROUND_Y		(50) /* baseline all buildings sit on */
 
 #define MINIGUN_AIM_LINE_LEN	(12) /* short aim indicator drawn off the current shooter */
+#define MINIGUN_MUZZLE_Y_OFFSET	(5) /* shoulder height below sprite top - shared by the aim line and the fired shot so they always start from the same point */
 
 #define MINIGUN_ANGLE_MIN		(10)
 #define MINIGUN_ANGLE_MAX		(80)
@@ -226,7 +227,7 @@ static void minigun_fire_shot() {
 	float dir	= (minigun_current_player == 0) ? 1.0f : -1.0f;
 
 	minigun_proj_x	= minigun_player_x[minigun_current_player] + (MINIGUN_SPRITE_W / 2);
-	minigun_proj_y	= minigun_player_y[minigun_current_player] - 1;
+	minigun_proj_y	= minigun_player_y[minigun_current_player] + MINIGUN_MUZZLE_Y_OFFSET;
 	minigun_proj_vx = speed * cos(rad) * dir;
 	minigun_proj_vy = -(speed * sin(rad));
 
@@ -311,7 +312,7 @@ static void minigun_draw_aim_line() {
 	float dir = (p == 0) ? 1.0f : -1.0f;
 
 	int16_t ox = minigun_player_x[p] + (MINIGUN_SPRITE_W / 2);
-	int16_t oy = minigun_player_y[p] + 5;
+	int16_t oy = minigun_player_y[p] + MINIGUN_MUZZLE_Y_OFFSET;
 	int16_t tx = ox + (int16_t)(dir * MINIGUN_AIM_LINE_LEN * cos(rad));
 	int16_t ty = oy - (int16_t)(MINIGUN_AIM_LINE_LEN * sin(rad));
 

@@ -307,3 +307,18 @@ board via `btn` + `lcd d` + `decode_ak_lcd`:
   from earlier board activity, not a regression from this change — worth
   a `fatal r` + clean reboot the next time someone's at the board to
   reset the baseline back to the sentinel.
+
+### Bugfix: projectile now starts from the aim line
+
+The fired shot's spawn point (`minigun_fire_shot()`) and the aim line's
+origin (`minigun_draw_aim_line()`) were computed with two independent
+magic numbers that had drifted apart: the projectile started at
+`player_y - 1` (just above the sprite's head) while the aim line was
+rooted at `player_y + 5` (shoulder height) — a visible ~6px gap between
+where the aim indicator pointed from and where the trail actually began.
+Fixed by introducing `MINIGUN_MUZZLE_Y_OFFSET` and having both places
+read it, so they can't diverge again. Confirmed on real hardware
+(`btn p`/`btn r` timed via the host-side send-only pattern, `lcd d` +
+`decode_ak_lcd` captured a few ticks into flight): the trail's first
+dots now sit right at the shooter's shoulder, matching where the aim
+line used to be drawn during aiming.
