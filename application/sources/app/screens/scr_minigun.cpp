@@ -29,7 +29,7 @@ static minigun_building_t minigun_buildings[MINIGUN_BUILDING_COUNT];
 
 #define MINIGUN_GROUND_Y		(50) /* baseline all buildings sit on */
 
-#define MINIGUN_AIM_LINE_LEN	(6) /* short aim indicator drawn off the current shooter */
+#define MINIGUN_AIM_LINE_LEN	(12) /* short aim indicator drawn off the current shooter */
 
 #define MINIGUN_ANGLE_MIN		(10)
 #define MINIGUN_ANGLE_MAX		(80)
