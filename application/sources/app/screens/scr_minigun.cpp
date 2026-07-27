@@ -289,6 +289,19 @@ static void minigun_draw_skyline() {
 	}
 }
 
+/* 1px selection box around whichever sprite is the current shooter, so
+ * it's obvious who you're controlling even before you touch the aim
+ * line. Sits flush against the bitmap's own bounding box (no extra
+ * clearance needed above/below) since buildings can be tall enough to
+ * put a player's head just a few pixels from the top of the panel -
+ * see MINIGUN_BUILDING_HEIGHT_MAX.
+ */
+static void minigun_draw_active_marker() {
+	uint8_t p = minigun_current_player;
+	view_render.drawRect(minigun_player_x[p] - 1, minigun_player_y[p] - 1,
+						  MINIGUN_SPRITE_W + 2, MINIGUN_SPRITE_H + 2, WHITE);
+}
+
 /* Short dash off the current shooter showing their aim, pivoting from
  * about shoulder height in the direction/angle they're about to fire.
  */
@@ -305,14 +318,32 @@ static void minigun_draw_aim_line() {
 	view_render.drawLine(ox, oy, tx, ty, WHITE);
 }
 
+#define MINIGUN_POWER_BAR_X		(62)
+#define MINIGUN_POWER_BAR_Y		(LCD_HEIGHT - 8)
+#define MINIGUN_POWER_BAR_W		(60)
+#define MINIGUN_POWER_BAR_H		(7)
+
+/* Power gauge: an outlined bar that fills left-to-right with charge, in
+ * place of a plain "Power: NN" number - reads at a glance while MODE is
+ * held, same way the aim line reads faster than an angle number.
+ */
+static void minigun_draw_power_bar() {
+	uint8_t power = minigun_power_val[minigun_current_player];
+	uint8_t fill_w = ((MINIGUN_POWER_BAR_W - 2) * power) / MINIGUN_POWER_MAX;
+
+	view_render.drawRect(MINIGUN_POWER_BAR_X, MINIGUN_POWER_BAR_Y, MINIGUN_POWER_BAR_W, MINIGUN_POWER_BAR_H, WHITE);
+	if (fill_w > 0) {
+		view_render.fillRect(MINIGUN_POWER_BAR_X + 1, MINIGUN_POWER_BAR_Y + 1, fill_w, MINIGUN_POWER_BAR_H - 2, WHITE);
+	}
+}
+
 static void minigun_draw_hud() {
 	view_render.setTextSize(1);
 	view_render.setTextColor(WHITE);
 	view_render.setCursor(0, LCD_HEIGHT - 8);
 	view_render.print("Angle: ");
 	view_render.print((int)minigun_angle_deg[minigun_current_player]);
-	view_render.print(" Power: ");
-	view_render.print((int)minigun_power_val[minigun_current_player]);
+	minigun_draw_power_bar();
 }
 
 static void minigun_draw_game_over() {
@@ -340,6 +371,7 @@ void view_scr_minigun() {
 
 	view_render.drawBitmap(minigun_player_x[0], minigun_player_y[0], bitmap_player_human, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
 	view_render.drawBitmap(minigun_player_x[1], minigun_player_y[1], bitmap_player_alien, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
+	minigun_draw_active_marker();
 	minigun_draw_aim_line();
 
 	for (uint8_t i = 0; i < minigun_trail_count; i++) {

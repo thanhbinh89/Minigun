@@ -16,7 +16,10 @@ future changes stay consistent.
 - **Players**: two on-screen characters (`bitmap_player_human`,
   `bitmap_player_alien` in `app/screens/screens_bitmap.cpp`), standing on
   the leftmost and rightmost buildings of the skyline. Turn 0 = human
-  (fires rightward), turn 1 = alien (fires leftward).
+  (fires rightward), turn 1 = alien (fires leftward). Whichever one is
+  currently being controlled gets a 1px selection box drawn flush around
+  its sprite (`minigun_draw_active_marker()`), on top of the aim line, so
+  it's obvious at a glance who you're aiming/firing as.
 - **World**: the skyline is randomly regenerated every match
   (`minigun_generate_skyline()`) — 8 buildings, widths always summing to
   exactly `LCD_WIDTH` so they still tile edge to edge with no gaps, random
@@ -36,9 +39,10 @@ future changes stay consistent.
   as a short dotted trail. If it touches the opposing player, that shot's
   owner wins immediately (`MINIGUN_STATE_GAME_OVER`). If it hits a
   building or leaves the screen, the turn passes to the other player.
-- **HUD**: bottom row always shows `Angle: NN Power: NNN` for the player
-  currently aiming/firing, per the reference mock the game was designed
-  against.
+- **HUD**: bottom row always shows `Angle: NN` plus an outlined power
+  gauge (`minigun_draw_power_bar()`) for the player currently
+  aiming/firing — the bar fills left-to-right in real time as `MODE` is
+  held, replacing what was originally a plain `Power: NNN` number.
 - **Restart**: from the game-over screen, pressing `MODE` starts a new
   match — a freshly randomized skyline, both players reset to 45°/0
   power, human goes first.
@@ -262,3 +266,44 @@ final pre-flash commit:
   visually inspected via `decode_ak_lcd` — skyline, both sprites, and HUD
   text all render as intended and within panel bounds. This is a
   visualization aid only, not a substitute for flashing real hardware.
+
+### Active-player marker + power bar
+
+Two small HUD/legibility features, flashed and confirmed on the real
+board via `btn` + `lcd d` + `decode_ak_lcd`:
+
+- **Active-player marker** (`minigun_draw_active_marker()`): a 1px
+  selection box drawn flush around the current shooter's sprite bounding
+  box (`player_x/y - 1`, `SPRITE_W/H + 2`). Deliberately sized to sit
+  *inside* the sprite's own footprint rather than clearing space above
+  the head, because the tallest buildings (`MINIGUN_BUILDING_HEIGHT_MAX
+  = 36`) put a player's head only 3px from the top of the panel — a
+  marker floating above the head would clip off-screen there. Confirmed
+  on-device: the box rendered around the human on turn 1, and after a
+  weak shot missed and the turn passed, the box correctly moved to the
+  alien on turn 2 (independently of the aim line, which does the same
+  per-turn handoff) — no clipping at either end of the skyline.
+- **Power bar** (`minigun_draw_power_bar()`): replaces the old
+  `Power: NNN` text with an outlined gauge (`x=62,y=LCD_HEIGHT-8,
+  w=60,h=7`) that fills left-to-right in proportion to
+  `power/MINIGUN_POWER_MAX`, redrawn every tick like the rest of the
+  HUD so it animates live while `MODE` is held. Confirmed on-device at
+  three fill levels — empty (post-restart), partial (~15% after a short
+  timed hold), and full (after a long hold, clamped at 100) — all
+  rendered as a clean border with a proportionally-sized inner fill and
+  no artifacts.
+- **Budget**: `make info` → flash 71936/118784 B (60.6% used, up ~1 KB
+  from the pre-marker/bar build), RAM unchanged at 13988/16384 B
+  (85.4% used) — both features are computed from existing per-player
+  state on every draw, no new stored fields.
+- **Fatal log**: `fatal l` showed `fatal_times: 1` (`MF 0x21`, COMMON
+  message pool exhaustion) going into this session — traced via
+  `analyze_ak_log` to task id 10 (`AC_LINK_PHY_ID`) and a `fatal m`
+  history dominated by RF24/link-network task activity, i.e. the
+  UART/RF link stack, not the display task or anything this change
+  touches. `fatal_times` stayed at exactly `1` (same record, unchanged)
+  across both flashes done for this work; `restart_times` moved only by
+  the two reflashes themselves. Treated as a pre-existing/stale record
+  from earlier board activity, not a regression from this change — worth
+  a `fatal r` + clean reboot the next time someone's at the board to
+  reset the baseline back to the sentinel.
