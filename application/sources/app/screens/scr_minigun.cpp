@@ -49,6 +49,9 @@ static minigun_building_t minigun_buildings[MINIGUN_BUILDING_COUNT];
 #define MINIGUN_TRAIL_LEN			(10)	/* short comet trail, not the full flight path */
 #define MINIGUN_MAX_FLIGHT_TICKS	(150)	/* safety cap so a shot always resolves */
 
+#define MINIGUN_EXPLOSION_FRAME_COUNT	(6)	/* expanding ring, one radius step per tick */
+#define MINIGUN_EXPLOSION_RADIUS_STEP	(2)	/* px of radius added per frame */
+
 enum minigun_state_t {
 	MINIGUN_STATE_AIMING = 0,
 	MINIGUN_STATE_FIRING,
@@ -81,6 +84,13 @@ struct minigun_trail_point_t {
 };
 static minigun_trail_point_t minigun_trail[MINIGUN_TRAIL_LEN];
 static uint8_t minigun_trail_count = 0;
+
+/* explosion animation: an expanding ring centered on the impact point,
+ * played instead of the plain round-end pause when a shot connects.
+ * frame 0 = inactive.
+ */
+static uint8_t minigun_explosion_x, minigun_explosion_y;
+static uint8_t minigun_explosion_frame = 0;
 
 static void view_scr_minigun();
 
@@ -174,9 +184,17 @@ static void minigun_resolve_round(bool hit) {
 	minigun_winner		 = minigun_current_player;
 	minigun_game_state	 = MINIGUN_STATE_ROUND_END;
 
-	BUZZER_PlaySound(hit ? BUZZER_SOUND_HIGHSCORE : BUZZER_SOUND_CLICK);
-
-	timer_set(AC_TASK_DISPLAY_ID, AC_MINIGUN_ROUND_END_TICK, AC_MINIGUN_ROUND_END_DELAY_MS, TIMER_ONE_SHOT);
+	if (hit) {
+		BUZZER_PlaySound(BUZZER_SOUND_HIGHSCORE);
+		minigun_explosion_x		= (uint8_t)minigun_proj_x;
+		minigun_explosion_y		= (uint8_t)minigun_proj_y;
+		minigun_explosion_frame	= 1;
+		timer_set(AC_TASK_DISPLAY_ID, AC_MINIGUN_EXPLOSION_TICK, AC_MINIGUN_EXPLOSION_TICK_INTERVAL_MS, TIMER_PERIODIC);
+	}
+	else {
+		BUZZER_PlaySound(BUZZER_SOUND_CLICK);
+		timer_set(AC_TASK_DISPLAY_ID, AC_MINIGUN_ROUND_END_TICK, AC_MINIGUN_ROUND_END_DELAY_MS, TIMER_ONE_SHOT);
+	}
 }
 
 /* One simulation step of the in-flight shot: integrate gravity, leave a trail
@@ -268,10 +286,12 @@ static void minigun_new_match() {
 	minigun_flight_ticks	= 0;
 	minigun_game_state		= MINIGUN_STATE_AIMING;
 	minigun_trail_reset();
+	minigun_explosion_frame	= 0;
 
 	timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_CHARGE_TICK);
 	timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_PROJECTILE_TICK);
 	timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_ROUND_END_TICK);
+	timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_EXPLOSION_TICK);
 }
 
 static void minigun_draw_skyline() {
@@ -317,6 +337,18 @@ static void minigun_draw_aim_line() {
 	int16_t ty = oy - (int16_t)(MINIGUN_AIM_LINE_LEN * sin(rad));
 
 	view_render.drawLine(ox, oy, tx, ty, WHITE);
+}
+
+/* Expanding ring centered on the impact point, drawn on top of the
+ * trail/opponent once a shot connects - active while
+ * minigun_explosion_frame is nonzero (see AC_MINIGUN_EXPLOSION_TICK).
+ */
+static void minigun_draw_explosion() {
+	if (minigun_explosion_frame == 0) {
+		return;
+	}
+	uint8_t radius = minigun_explosion_frame * MINIGUN_EXPLOSION_RADIUS_STEP;
+	view_render.drawCircle(minigun_explosion_x, minigun_explosion_y, radius, WHITE);
 }
 
 #define MINIGUN_POWER_BAR_X		(62)
@@ -378,6 +410,7 @@ void view_scr_minigun() {
 	for (uint8_t i = 0; i < minigun_trail_count; i++) {
 		view_render.drawPixel(minigun_trail[i].x, minigun_trail[i].y, WHITE);
 	}
+	minigun_draw_explosion();
 
 	minigun_draw_hud();
 }
@@ -445,6 +478,15 @@ void scr_minigun_handle(ak_msg_t* msg) {
 
 	case AC_MINIGUN_ROUND_END_TICK: {
 		minigun_start_next_turn();
+	} break;
+
+	case AC_MINIGUN_EXPLOSION_TICK: {
+		minigun_explosion_frame++;
+		if (minigun_explosion_frame > MINIGUN_EXPLOSION_FRAME_COUNT) {
+			timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_EXPLOSION_TICK);
+			minigun_explosion_frame = 0;
+			minigun_start_next_turn();
+		}
 	} break;
 
 	default:

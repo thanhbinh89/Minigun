@@ -147,6 +147,7 @@ enum {
 #define AC_MINIGUN_CHARGE_TICK_INTERVAL_MS							(60)
 #define AC_MINIGUN_PROJECTILE_TICK_INTERVAL_MS						(60)
 #define AC_MINIGUN_ROUND_END_DELAY_MS								(900)
+#define AC_MINIGUN_EXPLOSION_TICK_INTERVAL_MS						(70)
 
 /* define signal */
 enum {
@@ -168,7 +169,8 @@ enum {
 	AC_DISPLAY_SHOW_MODBUS_PULL_SLEEP,
 	AC_MINIGUN_CHARGE_TICK,
 	AC_MINIGUN_PROJECTILE_TICK,
-	AC_MINIGUN_ROUND_END_TICK
+	AC_MINIGUN_ROUND_END_TICK,
+	AC_MINIGUN_EXPLOSION_TICK
 };
 
 /*****************************************************************************/

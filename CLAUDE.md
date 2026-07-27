@@ -36,9 +36,12 @@ future changes stay consistent.
   hold fires at full power. There is no confirm step — release = fire.
 - **Resolution**: the shot is simulated as a parabolic projectile
   (gravity + initial velocity from angle/power) on a periodic timer, drawn
-  as a short dotted trail. If it touches the opposing player, that shot's
-  owner wins immediately (`MINIGUN_STATE_GAME_OVER`). If it hits a
-  building or leaves the screen, the turn passes to the other player.
+  as a short dotted trail. If it touches the opposing player, an
+  expanding-ring explosion (`minigun_draw_explosion()`) plays at the
+  impact point for `MINIGUN_EXPLOSION_FRAME_COUNT` ticks before that
+  shot's owner wins (`MINIGUN_STATE_GAME_OVER`). If it hits a building or
+  leaves the screen, the turn passes to the other player after the usual
+  round-end pause (no explosion on a miss).
 - **HUD**: bottom row always shows `Angle: NN` plus an outlined power
   gauge (`minigun_draw_power_bar()`) for the player currently
   aiming/firing — the bar fills left-to-right in real time as `MODE` is
@@ -322,3 +325,46 @@ read it, so they can't diverge again. Confirmed on real hardware
 `decode_ak_lcd` captured a few ticks into flight): the trail's first
 dots now sit right at the shooter's shoulder, matching where the aim
 line used to be drawn during aiming.
+
+### Explosion effect on a hit
+
+A hit now plays a short animation instead of freezing straight into the
+round-end pause: `minigun_resolve_round(true)` records the impact point
+(`minigun_proj_x/y` at the moment of collision) and arms a new periodic
+timer, `AC_MINIGUN_EXPLOSION_TICK` (70ms, `AC_MINIGUN_EXPLOSION_FRAME_COUNT`
+= 6 ticks ≈ 420ms), instead of the plain one-shot `AC_MINIGUN_ROUND_END_TICK`
+used on a miss. Each tick, `minigun_draw_explosion()` draws
+`view_render.drawCircle()` centered on the impact point with radius
+`frame * MINIGUN_EXPLOSION_RADIUS_STEP` (2px/frame, so a 2→12px expanding
+ring) — a `frame == 0` sentinel keeps it off-screen the rest of the time.
+On the frame after the last one, the timer cancels itself and calls
+`minigun_start_next_turn()` directly (which sees `pending_win` and goes
+to `MINIGUN_STATE_GAME_OVER`), so hit and miss still only ever have one
+timer live at a time in `ROUND_END`, matching the existing
+one-timer-per-state pattern. `minigun_new_match()` also cancels
+`AC_MINIGUN_EXPLOSION_TICK` and resets the frame counter, same as the
+other three timers.
+
+Verified end-to-end on real hardware. Reading the framebuffer alone
+couldn't confirm a hit was imminent, so a temporary debug print
+(`APP_DBG` on the DOWN-button handler, removed before this commit) was
+used once to read `minigun_player_x/y` for both players out of a live
+match; solving the exact in-code projectile equations
+(`vx = speed·cosθ`, `y(t) = y0 + vy0·t + 0.5·g·t²`) for those coordinates
+at full power gave a clean 35°/100-power solution (two analytic roots
+existed, ~35° and ~59°; 35° was chosen as the flatter, shorter-flight
+arc). Firing that shot and capturing `lcd d` mid-flight showed the trail
+arcing straight onto the alien's coordinates with the power bar still
+full (the shooter's state, correctly frozen through `ROUND_END`); the
+very next capture, taken a fraction of a second later, showed new set
+bits appearing only around the alien's sprite in exactly the shape of a
+`drawCircle` ring — the explosion animation caught mid-frame
+(`decode_ak_lcd` renders it clearly as a ring overlapping the alien in
+the PNG). A capture taken shortly after that showed the screen had
+already collapsed to the `PLAYER 1` / `WINS!` game-over text. That's the
+full timer handoff working as coded: explosion ticks self-cancel and
+call `minigun_start_next_turn()`, which sees `pending_win` and jumps
+straight to `GAME_OVER` - no dangling timers, no leftover explosion
+frame on the next match (`fatal l` unchanged at `fatal_times: 1` across
+this whole test sequence; `restart_times` moved only by this session's
+reflashes).
