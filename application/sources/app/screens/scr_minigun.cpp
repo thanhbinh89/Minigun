@@ -77,10 +77,19 @@ static float	minigun_proj_x, minigun_proj_y;
 static float	minigun_proj_vx, minigun_proj_vy;
 static uint16_t minigun_flight_ticks;
 
+/* Vertical camera offset: screen_y = world_y + minigun_camera_y. A high
+ * arc can carry the shot above world_y=0 (there's no top-of-screen
+ * off_screen check - see minigun_step_projectile), so the view follows
+ * it up by shifting everything else (skyline, players, trail) down by
+ * the same amount, rather than letting the shot fly off the top unseen.
+ * Always 0 outside of FIRING.
+ */
+static uint8_t minigun_camera_y = 0;
+
 /* short comet-style trail behind the projectile, ring buffer */
 struct minigun_trail_point_t {
 	uint8_t x;
-	uint8_t y;
+	int8_t	y; /* world-space, may be negative - see minigun_camera_y */
 };
 static minigun_trail_point_t minigun_trail[MINIGUN_TRAIL_LEN];
 static uint8_t minigun_trail_count = 0;
@@ -162,7 +171,7 @@ static void minigun_trail_reset() {
 	minigun_trail_count = 0;
 }
 
-static void minigun_trail_push(uint8_t x, uint8_t y) {
+static void minigun_trail_push(uint8_t x, int8_t y) {
 	if (minigun_trail_count < MINIGUN_TRAIL_LEN) {
 		minigun_trail[minigun_trail_count].x = x;
 		minigun_trail[minigun_trail_count].y = y;
@@ -183,6 +192,7 @@ static void minigun_resolve_round(bool hit) {
 	minigun_pending_win = hit;
 	minigun_winner		 = minigun_current_player;
 	minigun_game_state	 = MINIGUN_STATE_ROUND_END;
+	minigun_camera_y	 = 0;
 
 	if (hit) {
 		BUZZER_PlaySound(BUZZER_SOUND_HIGHSCORE);
@@ -208,10 +218,12 @@ static void minigun_step_projectile() {
 	minigun_proj_vy	+= MINIGUN_GRAVITY;
 	minigun_flight_ticks++;
 
+	minigun_camera_y = (minigun_proj_y < 0.0f) ? (uint8_t)(-minigun_proj_y) : 0;
+
 	bool off_screen = (minigun_proj_x < 0.0f || minigun_proj_x >= (float)LCD_WIDTH || minigun_proj_y >= (float)LCD_HEIGHT);
 
-	if (!off_screen && minigun_proj_y >= 0.0f) {
-		minigun_trail_push((uint8_t)minigun_proj_x, (uint8_t)minigun_proj_y);
+	if (!off_screen) {
+		minigun_trail_push((uint8_t)minigun_proj_x, (int8_t)minigun_proj_y);
 	}
 
 	uint8_t opp = 1 - minigun_current_player;
@@ -287,6 +299,7 @@ static void minigun_new_match() {
 	minigun_game_state		= MINIGUN_STATE_AIMING;
 	minigun_trail_reset();
 	minigun_explosion_frame	= 0;
+	minigun_camera_y		= 0;
 
 	timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_CHARGE_TICK);
 	timer_remove_attr(AC_TASK_DISPLAY_ID, AC_MINIGUN_PROJECTILE_TICK);
@@ -295,14 +308,16 @@ static void minigun_new_match() {
 }
 
 static void minigun_draw_skyline() {
+	uint8_t ground = MINIGUN_GROUND_Y + minigun_camera_y;
+
 	for (uint8_t b = 0; b < MINIGUN_BUILDING_COUNT; b++) {
 		const minigun_building_t& bd = minigun_buildings[b];
-		uint8_t top = MINIGUN_GROUND_Y - bd.h;
+		uint8_t top = ground - bd.h;
 
 		view_render.fillRect(bd.x, top, bd.w, bd.h, WHITE);
 
 		/* windows: a grid of small black squares inset from the building edges */
-		for (uint8_t wy = top + 3; (wy + 2) <= (MINIGUN_GROUND_Y - 2); wy += 6) {
+		for (uint8_t wy = top + 3; (wy + 2) <= (ground - 2); wy += 6) {
 			for (uint8_t wx = bd.x + 3; (wx + 2) <= (bd.x + bd.w - 2); wx += 6) {
 				view_render.fillRect(wx, wy, 2, 2, BLACK);
 			}
@@ -319,7 +334,7 @@ static void minigun_draw_skyline() {
  */
 static void minigun_draw_active_marker() {
 	uint8_t p = minigun_current_player;
-	view_render.drawRect(minigun_player_x[p] - 1, minigun_player_y[p] - 1,
+	view_render.drawRect(minigun_player_x[p] - 1, minigun_player_y[p] - 1 + minigun_camera_y,
 						  MINIGUN_SPRITE_W + 2, MINIGUN_SPRITE_H + 2, WHITE);
 }
 
@@ -332,7 +347,7 @@ static void minigun_draw_aim_line() {
 	float dir = (p == 0) ? 1.0f : -1.0f;
 
 	int16_t ox = minigun_player_x[p] + (MINIGUN_SPRITE_W / 2);
-	int16_t oy = minigun_player_y[p] + MINIGUN_MUZZLE_Y_OFFSET;
+	int16_t oy = minigun_player_y[p] + MINIGUN_MUZZLE_Y_OFFSET + minigun_camera_y;
 	int16_t tx = ox + (int16_t)(dir * MINIGUN_AIM_LINE_LEN * cos(rad));
 	int16_t ty = oy - (int16_t)(MINIGUN_AIM_LINE_LEN * sin(rad));
 
@@ -402,13 +417,13 @@ void view_scr_minigun() {
 
 	minigun_draw_skyline();
 
-	view_render.drawBitmap(minigun_player_x[0], minigun_player_y[0], bitmap_player_human, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
-	view_render.drawBitmap(minigun_player_x[1], minigun_player_y[1], bitmap_player_alien, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
+	view_render.drawBitmap(minigun_player_x[0], minigun_player_y[0] + minigun_camera_y, bitmap_player_human, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
+	view_render.drawBitmap(minigun_player_x[1], minigun_player_y[1] + minigun_camera_y, bitmap_player_alien, MINIGUN_SPRITE_W, MINIGUN_SPRITE_H, WHITE);
 	minigun_draw_active_marker();
 	minigun_draw_aim_line();
 
 	for (uint8_t i = 0; i < minigun_trail_count; i++) {
-		view_render.drawPixel(minigun_trail[i].x, minigun_trail[i].y, WHITE);
+		view_render.drawPixel(minigun_trail[i].x, minigun_trail[i].y + minigun_camera_y, WHITE);
 	}
 	minigun_draw_explosion();
 

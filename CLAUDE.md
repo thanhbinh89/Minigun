@@ -36,12 +36,18 @@ future changes stay consistent.
   hold fires at full power. There is no confirm step — release = fire.
 - **Resolution**: the shot is simulated as a parabolic projectile
   (gravity + initial velocity from angle/power) on a periodic timer, drawn
-  as a short dotted trail. If it touches the opposing player, an
-  expanding-ring explosion (`minigun_draw_explosion()`) plays at the
-  impact point for `MINIGUN_EXPLOSION_FRAME_COUNT` ticks before that
-  shot's owner wins (`MINIGUN_STATE_GAME_OVER`). If it hits a building or
-  leaves the screen, the turn passes to the other player after the usual
-  round-end pause (no explosion on a miss).
+  as a short dotted trail. There's no top-of-screen bound on the
+  simulation (only the bottom and the two sides end a shot), so a steep
+  enough arc can climb above world_y=0 — when it does, a vertical camera
+  (`minigun_camera_y`, applied in every draw call) follows it up by
+  shifting the whole scene down, same as the camera pan in Worms-style
+  artillery games, rather than letting the shot vanish off the top.
+  If it touches the opposing player, an expanding-ring explosion
+  (`minigun_draw_explosion()`) plays at the impact point for
+  `MINIGUN_EXPLOSION_FRAME_COUNT` ticks before that shot's owner wins
+  (`MINIGUN_STATE_GAME_OVER`). If it hits a building or leaves the
+  screen, the turn passes to the other player after the usual round-end
+  pause (no explosion on a miss), and the camera snaps back to normal.
 - **HUD**: bottom row always shows `Angle: NN` plus an outlined power
   gauge (`minigun_draw_power_bar()`) for the player currently
   aiming/firing — the bar fills left-to-right in real time as `MODE` is
@@ -368,3 +374,41 @@ straight to `GAME_OVER` - no dangling timers, no leftover explosion
 frame on the next match (`fatal l` unchanged at `fatal_times: 1` across
 this whole test sequence; `restart_times` moved only by this session's
 reflashes).
+
+### Vertical camera follow
+
+`minigun_step_projectile()` never bounded the top of the simulation
+(only `minigun_proj_x < 0`, `proj_x >= LCD_WIDTH`, or `proj_y >=
+LCD_HEIGHT` end a shot) - a steep, powerful shot could fly to a
+world_y well below 0 and just render nothing, since the trail and every
+other draw call silently clip out-of-range coordinates. Fixed by adding
+`minigun_camera_y` (screen_y = world_y + camera_y), recomputed every
+tick as `max(0, -proj_y)` and applied in every draw call that renders
+world-space content (skyline, both sprites, the active-player marker,
+the aim line, and the trail - not the HUD or the game-over text, which
+are screen-space). `minigun_resolve_round()` and `minigun_new_match()`
+both reset it to 0, so it's only ever nonzero mid-flight. Trail points
+also switched from `uint8_t` to a signed `int8_t` y (still pushed in
+world-space, unconditionally now rather than only for `proj_y >= 0`),
+so old trail dots recorded above the panel still resolve to the right
+screen position once the camera has panned to reveal them.
+
+Verified on real hardware, and the process surfaced a capture-integrity
+lesson worth keeping: several `lcd d` dumps this session were silently
+missing a byte (a dropped comma mid-dump, e.g. `0x03,,0x13`), which
+shifts every subsequent line and produces a garbled render - always
+checked `len(re.findall(r'0x[0-9A-Fa-f]{2}', dump)) == 1024` before
+trusting a capture, and always ran it through `decode_ak_lcd` rather
+than eyeballing the raw hex (misreading the alien's own antenna bytes
+as an "explosion ring" by eye, more than once, is what cost the most
+time here - the tool's render is unambiguous, manual hex reading isn't).
+With that discipline: firing a steep 80°/full-power shot showed the
+trail climbing in a clean dotted arc while the shot was still above the
+panel, and the very next verified capture showed the *entire* skyline
+and both sprites shifted down to the bottom rows, overlapping the HUD -
+exactly the expected "camera pans away from the ground to keep the
+shot in frame" behavior. Once that shot's flight ended (timed out via
+`MINIGUN_MAX_FLIGHT_TICKS` given how little horizontal distance an
+80° shot covers per tick), a follow-up capture confirmed the view
+snapped cleanly back to the normal, unshifted skyline for the next
+turn. `fatal_times` stayed at `1` (same pre-existing record) throughout.
